@@ -1,0 +1,213 @@
+// Prisma schema — Chấm công online
+// Mọi thời điểm lưu ở UTC (timestamptz). Cột ngày công (work_date) là ngày theo giờ Việt Nam.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  EMPLOYEE
+  MANAGER
+  HR
+  ADMIN
+}
+
+enum AttendanceStatus {
+  PRESENT // Đủ công
+  LATE // Đi muộn
+  EARLY_LEAVE // Về sớm
+  LATE_AND_EARLY // Vừa muộn vừa sớm
+  MISSING_CHECKOUT // Quên check-out
+  ABSENT // Vắng mặt
+  ON_LEAVE // Nghỉ phép (đơn đã duyệt)
+  HOLIDAY // Ngày lễ
+}
+
+enum RequestType {
+  ANNUAL_LEAVE // Nghỉ phép năm (có lương, trừ quỹ phép)
+  UNPAID_LEAVE // Nghỉ không lương
+  MISSED_CHECK // Quên chấm công
+  LATE_EARLY // Xin đi muộn / về sớm
+  OVERTIME // Tăng ca
+  BUSINESS_TRIP // Công tác
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+/// Cách xác thực vị trí khi chấm công
+enum LocationMode {
+  NONE
+  GPS
+  IP
+  GPS_OR_IP
+  GPS_AND_IP
+}
+
+model Department {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  users     User[]
+
+  @@map("departments")
+}
+
+model User {
+  id              String      @id @default(cuid())
+  employeeCode    String      @unique @map("employee_code")
+  email           String      @unique
+  fullName        String      @map("full_name")
+  passwordHash    String      @map("password_hash")
+  role            Role        @default(EMPLOYEE)
+  active          Boolean     @default(true)
+  departmentId    String?     @map("department_id")
+  department      Department? @relation(fields: [departmentId], references: [id])
+  shiftId         String?     @map("shift_id")
+  shift           Shift?      @relation(fields: [shiftId], references: [id])
+  /// Số ngày phép năm được cấp (có thể lẻ 0.5)
+  annualLeaveDays Decimal     @default(12) @map("annual_leave_days") @db.Decimal(4, 1)
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+
+  attendances      Attendance[]
+  requests         Request[]    @relation("RequestOwner")
+  approvedRequests Request[]    @relation("RequestApprover")
+  auditLogs        AuditLog[]
+
+  @@index([departmentId])
+  @@map("users")
+}
+
+/// Ca làm việc. Giờ lưu dạng phút kể từ 00:00 (giờ VN). endMinute < startMinute nghĩa là ca qua đêm.
+model Shift {
+  id                String @id @default(cuid())
+  name              String @unique
+  startMinute       Int    @map("start_minute")
+  endMinute         Int    @map("end_minute")
+  breakStartMinute  Int?   @map("break_start_minute")
+  breakEndMinute    Int?   @map("break_end_minute")
+  lateGraceMinutes  Int    @default(5) @map("late_grace_minutes")
+  earlyGraceMinutes Int    @default(5) @map("early_grace_minutes")
+  users             User[]
+
+  @@map("shifts")
+}
+
+model Office {
+  id        String  @id @default(cuid())
+  name      String
+  latitude  Float
+  longitude Float
+  radiusM   Int     @default(100) @map("radius_m")
+  active    Boolean @default(true)
+
+  @@map("offices")
+}
+
+/// IP hoặc dải CIDR của mạng công ty
+model AllowedIp {
+  id          String  @id @default(cuid())
+  cidr        String  @unique
+  description String?
+
+  @@map("allowed_ips")
+}
+
+model Holiday {
+  id   String   @id @default(cuid())
+  date DateTime @unique @db.Date
+  name String
+
+  @@map("holidays")
+}
+
+/// Cấu hình hệ thống — chỉ có một dòng với id = 1
+model AppConfig {
+  id              Int          @id @default(1)
+  locationMode    LocationMode @default(GPS_OR_IP) @map("location_mode")
+  /// Ngày làm việc trong tuần: 0 = CN, 1 = T2, ... 6 = T7
+  workingWeekdays Int[]        @default([1, 2, 3, 4, 5]) @map("working_weekdays")
+
+  @@map("app_config")
+}
+
+model Attendance {
+  id                String           @id @default(cuid())
+  userId            String           @map("user_id")
+  user              User             @relation(fields: [userId], references: [id])
+  /// Ngày công theo giờ VN
+  workDate          DateTime         @map("work_date") @db.Date
+  checkInAt         DateTime?        @map("check_in_at") @db.Timestamptz
+  checkOutAt        DateTime?        @map("check_out_at") @db.Timestamptz
+  checkInLat        Float?           @map("check_in_lat")
+  checkInLng        Float?           @map("check_in_lng")
+  checkInIp         String?          @map("check_in_ip")
+  checkInUserAgent  String?          @map("check_in_user_agent")
+  checkOutLat       Float?           @map("check_out_lat")
+  checkOutLng       Float?           @map("check_out_lng")
+  checkOutIp        String?          @map("check_out_ip")
+  checkOutUserAgent String?          @map("check_out_user_agent")
+  status            AttendanceStatus @default(PRESENT)
+  lateMinutes       Int              @default(0) @map("late_minutes")
+  earlyMinutes      Int              @default(0) @map("early_minutes")
+  workedMinutes     Int              @default(0) @map("worked_minutes")
+  note              String?
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([userId, workDate])
+  @@index([workDate])
+  @@map("attendances")
+}
+
+model Request {
+  id                String        @id @default(cuid())
+  userId            String        @map("user_id")
+  user              User          @relation("RequestOwner", fields: [userId], references: [id])
+  type              RequestType
+  status            RequestStatus @default(PENDING)
+  startDate         DateTime      @map("start_date") @db.Date
+  endDate           DateTime      @map("end_date") @db.Date
+  /// Nghỉ nửa ngày
+  halfDay           Boolean       @default(false) @map("half_day")
+  /// Dùng cho quên chấm công / tăng ca (giờ đề xuất, UTC)
+  requestedCheckIn  DateTime?     @map("requested_check_in") @db.Timestamptz
+  requestedCheckOut DateTime?     @map("requested_check_out") @db.Timestamptz
+  reason            String
+  approverId        String?       @map("approver_id")
+  approver          User?         @relation("RequestApprover", fields: [approverId], references: [id])
+  decidedAt         DateTime?     @map("decided_at") @db.Timestamptz
+  decisionNote      String?       @map("decision_note")
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([userId, status])
+  @@map("requests")
+}
+
+/// Nhật ký mọi chỉnh sửa thủ công
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String   @map("actor_id")
+  actor     User     @relation(fields: [actorId], references: [id])
+  entity    String
+  entityId  String   @map("entity_id")
+  action    String
+  before    Json?
+  after     Json?
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
