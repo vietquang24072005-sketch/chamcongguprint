@@ -1,8 +1,11 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { checkLocation } from "@/lib/geo";
-import { dateKeyToDb, localDateKey } from "@/lib/time";
+import { dateKeyToDb, localDateKey, localMinuteToInstant } from "@/lib/time";
 import { computeAttendance, resolveWorkDate } from "@/lib/attendance/compute";
+import { audit } from "@/lib/audit";
+import { hhmmToMinute } from "@/lib/admin/rules";
+import type { ActionResult } from "@/lib/form-state";
 
 export type PunchInput = {
   userId: string;
@@ -119,4 +122,77 @@ export async function listAttendance(userId: string, fromKey: string, toKey: str
     where: { userId, workDate: { gte: dateKeyToDb(fromKey), lte: dateKeyToDb(toKey) } },
     orderBy: { workDate: "desc" },
   });
+}
+
+/**
+ * HR sửa công thủ công cho một ngày. Bắt buộc có lý do; ghi audit log trước/sau.
+ * - Có giờ vào: tính lại công theo ca (giờ ra nhỏ hơn giờ vào = sang hôm sau).
+ * - Bỏ trống cả hai giờ: đánh dấu vắng mặt (giữ bản ghi, không xoá).
+ */
+export async function adjustAttendance(input: {
+  actorId: string;
+  userId: string;
+  workDate: string;
+  checkInTime?: string;
+  checkOutTime?: string;
+  note?: string;
+  reason: string;
+  now: Date;
+}): Promise<ActionResult> {
+  if (input.actorId === input.userId) return { ok: false, error: "Không thể tự sửa công của mình" };
+  if (input.workDate > localDateKey(input.now)) return { ok: false, error: "Không thể sửa công cho ngày trong tương lai" };
+  if (!input.checkInTime && input.checkOutTime) return { ok: false, error: "Cần nhập giờ vào nếu có giờ ra" };
+
+  const user = await db.user.findUnique({ where: { id: input.userId }, include: { shift: true } });
+  if (!user) return { ok: false, error: "Không tìm thấy nhân viên" };
+
+  const checkInAt = input.checkInTime ? localMinuteToInstant(input.workDate, hhmmToMinute(input.checkInTime)) : null;
+  let checkOutAt = input.checkOutTime ? localMinuteToInstant(input.workDate, hhmmToMinute(input.checkOutTime)) : null;
+  if (checkInAt && checkOutAt && checkOutAt <= checkInAt) {
+    checkOutAt = new Date(checkOutAt.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  const computed = !checkInAt
+    ? { status: "ABSENT" as const, lateMinutes: 0, earlyMinutes: 0, workedMinutes: 0 }
+    : user.shift
+      ? computeAttendance({ workDate: input.workDate, shift: user.shift, checkInAt, checkOutAt })
+      : {
+          status: checkOutAt ? ("PRESENT" as const) : ("MISSING_CHECKOUT" as const),
+          lateMinutes: 0,
+          earlyMinutes: 0,
+          workedMinutes: checkOutAt ? Math.floor((checkOutAt.getTime() - checkInAt.getTime()) / 60000) : 0,
+        };
+
+  const data = { checkInAt, checkOutAt, ...computed, note: input.note ?? null };
+  const where = { userId_workDate: { userId: user.id, workDate: dateKeyToDb(input.workDate) } };
+
+  await db.$transaction(async (tx) => {
+    const before = await tx.attendance.findUnique({ where });
+    const after = await tx.attendance.upsert({
+      where,
+      create: { userId: user.id, workDate: dateKeyToDb(input.workDate), ...data },
+      update: data,
+    });
+    const pick = (r: typeof after | null) =>
+      r && {
+        workDate: input.workDate,
+        checkInAt: r.checkInAt,
+        checkOutAt: r.checkOutAt,
+        status: r.status,
+        lateMinutes: r.lateMinutes,
+        earlyMinutes: r.earlyMinutes,
+        workedMinutes: r.workedMinutes,
+        note: r.note,
+      };
+    await audit(tx, {
+      actorId: input.actorId,
+      entity: "attendance",
+      entityId: after.id,
+      action: "manual_adjust",
+      before: pick(before),
+      after: pick(after),
+      reason: input.reason,
+    });
+  });
+  return { ok: true, message: "Đã cập nhật công" };
 }

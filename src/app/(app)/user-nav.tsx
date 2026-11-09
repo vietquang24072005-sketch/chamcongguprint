@@ -17,14 +17,15 @@ export async function UserNav() {
   const user = await requireUser();
   return (
     <>
-      <nav className="flex flex-1 flex-wrap gap-x-4 gap-y-1 text-sm">
+      {/* Màn hình hẹp: menu xuống hàng riêng bên dưới; từ md: nằm giữa logo và tên người dùng */}
+      <nav className="order-last flex w-full flex-wrap gap-x-4 gap-y-1 text-sm md:order-none md:w-auto md:flex-1">
         {LINKS.filter((l) => hasRole(user, l.min)).map((l) => (
           <Link key={l.href} href={l.href} className="text-slate-600 hover:text-blue-700">
             {l.label}
           </Link>
         ))}
       </nav>
-      <div className="flex items-center gap-3 text-sm">
+      <div className="ml-auto flex items-center gap-3 text-sm">
         <span className="text-slate-600">
           {user.fullName} · <span className="text-slate-400">{ROLE_LABEL[user.role]}</span>
         </span>

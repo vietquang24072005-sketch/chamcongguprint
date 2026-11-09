@@ -66,7 +66,7 @@ src/
       attendance/            # Lịch sử chấm công tháng này
       requests/              # Quỹ phép, gửi đơn, danh sách đơn của mình
       approvals/             # Duyệt / từ chối — MANAGER+; HR huỷ đơn đã duyệt
-      reports/               # Bảng công, xuất Excel — HR+ (chưa làm)
+      reports/               # HR+: bảng công tháng; [userId]/ chi tiết + sửa công; export/ route xuất Excel
       admin/                 # HR+: employees/, departments/, shifts/, holidays/; ADMIN: settings/
     actions/                 # Server Actions: auth, attendance, requests, admin
   components/                # UI dùng chung: ActionForm, ConfirmButton, Field/Card/inputClass
@@ -85,6 +85,9 @@ src/
     admin/rules.ts           # Ai được quản lý / gán vai trò cho ai, kiểm tra ca — hàm thuần, có unit test
     audit.ts                 # Helper ghi audit_logs
     form-state.ts            # ActionResult / FormState dùng chung cho Server Actions
+    reports/
+      summary.ts             # Tổng hợp công tháng + ký hiệu ngày — hàm thuần, có unit test
+      service.ts             # Lấy dữ liệu bảng công tháng (DB)
     requests/
       rules.ts               # Đếm ngày phép, ngày làm việc, quyền duyệt — hàm thuần, có unit test
       service.ts             # Tạo / huỷ / duyệt đơn, áp dụng & hoàn tác bảng công
@@ -149,6 +152,19 @@ Biến môi trường đặt trong `.env` (không commit), mẫu ở `.env.examp
 - Mọi thao tác quản trị đều ghi `audit_logs` (entity: `user`, `department`, `shift`, `holiday`, `office`, `allowed_ip`, `app_config`). Không bao giờ ghi mật khẩu/hash vào log.
 - Trang **Cấu hình chấm công** (`/admin/settings`) chỉ dành cho ADMIN.
 - Chuyển hướng `/` → `/dashboard` và `/admin` → `/admin/employees` khai báo trong `next.config.ts` (`redirects`), không dùng trang chỉ gọi `redirect()` vì Next 16 báo lỗi khi kiểm tra prerender.
+
+### Báo cáo (đã cài đặt)
+- **Không lưu bảng công tổng hợp** — luôn tính lại từ `attendances` + đơn đã duyệt bằng `buildMonthlySummary`. Nghỉ phép / công tác / tăng ca lấy từ **đơn đã duyệt**, không dựa vào status `ON_LEAVE` trên bảng công.
+- Quy tắc tính (xem đầu `lib/reports/summary.ts` cho bảng ký hiệu X, M, S, MS, Q, P, KL, CT, V, L…):
+  - Công chuẩn = ngày làm việc trong tháng (trừ lễ), chỉ tính từ ngày tạo tài khoản.
+  - Ngày làm việc đã qua mà không chấm và không có đơn → vắng. **Hôm nay chưa tính vắng**, quên check-out hôm nay chưa tính.
+  - Nghỉ nửa ngày có chấm công → 0.5 có mặt + 0.5 phép; không chấm → 0.5 phép + 0.5 vắng.
+  - Ngày lễ rơi vào ngày làm việc → được trả công. Làm cuối tuần → cộng giờ làm, không cộng ngày công.
+  - Tăng ca = tổng giờ của đơn tăng ca đã duyệt có ngày bắt đầu trong tháng.
+  - **Công tính lương = có mặt + công tác + phép năm + lễ.**
+- Danh sách gồm nhân viên đang làm và nhân viên đã khoá nhưng có công trong tháng.
+- **Sửa công thủ công** (`adjustAttendance`): chỉ HR+, bắt buộc lý do, ghi audit `attendance/manual_adjust` trước/sau; không tự sửa công của mình; không sửa ngày tương lai; bỏ trống cả hai giờ = vắng (giữ bản ghi).
+- Xuất Excel: `GET /reports/export?month=yyyy-MM&dept=` (route handler, tự kiểm tra quyền HR) → 2 sheet "Tổng hợp" và "Chấm công chi tiết" (ký hiệu theo ngày, có màu).
 
 ### Quy ước UI
 - Form gọi Server Action: dùng `<ActionForm action={...} submitLabel="..." resetOnSuccess?>`, action có chữ ký `(prev: FormState, formData) => Promise<FormState>` và trả về `stamp({...})`.
