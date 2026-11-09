@@ -118,7 +118,8 @@ Biến môi trường đặt trong `.env` (không commit), mẫu ở `.env.examp
 
 ## Triển khai (production)
 
-- Hosting: **Vercel**, project `chamcongguprint` → https://chamcongguprint.vercel.app. Database: Postgres trên Neon (Vercel Storage).
+- Hosting: **Vercel** (team daovietquang), project `chamcongguprint` → https://chamcongguprint.vercel.app, region `sin1` (`vercel.json`). Repo GitHub `chamcongguprint` đã liên kết: push lên `master` là tự deploy production.
+- Database: **Prisma Postgres** (region ap-southeast-1, gói Free, đã claim vào workspace Prisma của chủ dự án). Quản lý tại console.prisma.io.
 - Biến môi trường trên Vercel: `DATABASE_URL`, `SESSION_SECRET`, `APP_TIMEZONE`.
 - Build dùng script `vercel-build` = `prisma generate && prisma migrate deploy && next build` → migration tự áp dụng mỗi lần deploy. Vì vậy **mọi thay đổi schema phải đi kèm file migration** trong `prisma/migrations/`.
 - Tạo migration: `npm run db:migrate -- --name <tên>`. Nếu shadow DB của `prisma dev` lỗi, sinh bằng `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script -o prisma/migrations/<timestamp>_<tên>/migration.sql` rồi `npm run db:deploy`.

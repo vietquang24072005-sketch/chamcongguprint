@@ -17,7 +17,7 @@ Mở http://localhost:3000.
 
 ## Triển khai (Vercel + Postgres)
 
-1. Tạo database Postgres (Vercel → Storage → Neon, hoặc Postgres bất kỳ) và đặt biến môi trường trên Vercel:
+1. Tạo database Postgres (đang dùng Prisma Postgres; Postgres nào cũng được) và đặt biến môi trường trên Vercel:
    - `DATABASE_URL` — chuỗi kết nối Postgres
    - `SESSION_SECRET` — chuỗi ngẫu nhiên ≥ 32 ký tự
    - `APP_TIMEZONE=Asia/Ho_Chi_Minh`
