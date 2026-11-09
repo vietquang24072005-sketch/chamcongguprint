@@ -116,6 +116,15 @@ npm test                 # Vitest
 
 Biến môi trường đặt trong `.env` (không commit), mẫu ở `.env.example`: `DATABASE_URL`, `SESSION_SECRET`, `APP_TIMEZONE=Asia/Ho_Chi_Minh`. Database dev do `prisma dev` tạo chạy ở cổng 51218 — nếu cổng khác, xem bằng `npx prisma dev ls`.
 
+## Triển khai (production)
+
+- Hosting: **Vercel**, project `chamcongguprint` → https://chamcongguprint.vercel.app. Database: Postgres trên Neon (Vercel Storage).
+- Biến môi trường trên Vercel: `DATABASE_URL`, `SESSION_SECRET`, `APP_TIMEZONE`.
+- Build dùng script `vercel-build` = `prisma generate && prisma migrate deploy && next build` → migration tự áp dụng mỗi lần deploy. Vì vậy **mọi thay đổi schema phải đi kèm file migration** trong `prisma/migrations/`.
+- Tạo migration: `npm run db:migrate -- --name <tên>`. Nếu shadow DB của `prisma dev` lỗi, sinh bằng `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script -o prisma/migrations/<timestamp>_<tên>/migration.sql` rồi `npm run db:deploy`.
+- Khởi tạo production lần đầu: `npx vercel env pull .env.production.local` rồi `npm run db:bootstrap:prod` (hỏi email/mật khẩu Admin trong terminal; không tạo tài khoản test). **`npm run db:seed` tự từ chối chạy khi DATABASE_URL không phải localhost.**
+- Bảo mật đã có: giới hạn đăng nhập (sai 5 lần/tài khoản hoặc 20 lần/IP trong 15 phút → khoá tạm, bảng `login_attempts`), header bảo mật trong `next.config.ts`, cookie phiên `secure` ở production, người dùng tự đổi mật khẩu tại `/account`.
+
 ## Quy tắc nghiệp vụ quan trọng
 
 - **Múi giờ**: lưu mọi thời điểm trong DB ở **UTC** (`timestamptz`). Hiển thị và tính "ngày công" theo `Asia/Ho_Chi_Minh`. Ranh giới ngày phải tính theo giờ Việt Nam, không theo UTC.
@@ -177,7 +186,7 @@ Biến môi trường đặt trong `.env` (không commit), mẫu ở `.env.examp
 - Kiểm tra quyền **ở server** trong mọi Server Action / route handler — ẩn nút trên UI là không đủ.
 - MANAGER chỉ truy cập dữ liệu nhân viên trong phòng ban mình; luôn lọc theo `departmentId` ở tầng truy vấn.
 - Toạ độ GPS do client gửi có thể bị giả mạo — với văn phòng yêu cầu nghiêm ngặt, kết hợp thêm kiểm tra IP.
-- Giới hạn tần suất (rate limit) cho đăng nhập và check-in.
+- Rate limit đăng nhập: đã có (`lib/rate-limit.ts` + `login_attempts`). Check-in chưa cần vì mỗi ngày chỉ một bản ghi.
 - Không log mật khẩu, token hay toạ độ chi tiết ra console ở production.
 
 ## Quy ước code

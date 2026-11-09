@@ -26,9 +26,9 @@ export async function UserNav() {
         ))}
       </nav>
       <div className="ml-auto flex items-center gap-3 text-sm">
-        <span className="text-slate-600">
+        <Link href="/account" className="text-slate-600 hover:text-blue-700" title="Tài khoản và đổi mật khẩu">
           {user.fullName} · <span className="text-slate-400">{ROLE_LABEL[user.role]}</span>
-        </span>
+        </Link>
         <form action={logout}>
           <button className="rounded-md px-2 py-1 text-slate-500 hover:bg-slate-100">Đăng xuất</button>
         </form>

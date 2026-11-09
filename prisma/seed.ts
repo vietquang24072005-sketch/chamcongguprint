@@ -20,6 +20,12 @@ const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.
 const h = (hh: number, mm = 0) => hh * 60 + mm;
 
 async function main() {
+  // Chặn chạy nhầm vào database thật: seed tạo tài khoản test với mật khẩu công khai.
+  const host = new URL((process.env.DATABASE_URL ?? "").replace(/^postgres(ql)?:/, "http:")).hostname;
+  if (!["localhost", "127.0.0.1", "::1", "[::1]"].includes(host)) {
+    throw new Error(`Từ chối seed dữ liệu test vào database ${host}. Dùng "npm run db:bootstrap" cho production.`);
+  }
+
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
 
   const [tech, sales] = await Promise.all(

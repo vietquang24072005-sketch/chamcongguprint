@@ -50,6 +50,12 @@ async function SettingsContent() {
 
   return (
     <div className="space-y-6">
+      {mode === "NONE" && (
+        <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800 ring-1 ring-amber-200">
+          Đang <b>không kiểm tra vị trí</b>: nhân viên chấm công được từ bất kỳ đâu. Trước khi dùng chính thức, hãy thêm
+          văn phòng và/hoặc IP mạng công ty bên dưới rồi chọn chế độ kiểm tra.
+        </p>
+      )}
       <Card title="Quy định chấm công">
         <ActionForm action={updateAppConfigAction} submitLabel="Lưu cấu hình" className="space-y-5">
           <fieldset>

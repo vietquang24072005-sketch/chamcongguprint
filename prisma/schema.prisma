@@ -211,3 +211,16 @@ model AuditLog {
   @@index([entity, entityId])
   @@map("audit_logs")
 }
+
+/// Lịch sử đăng nhập — dùng để giới hạn số lần thử sai
+model LoginAttempt {
+  id         String   @id @default(cuid())
+  identifier String
+  ip         String?
+  success    Boolean
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([identifier, createdAt])
+  @@index([ip, createdAt])
+  @@map("login_attempts")
+}
